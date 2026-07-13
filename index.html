@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOOSE RACER 🏁 — Mathilda "Moose" Oosthuizen's Grand Prix</title>
+<meta name="description" content="Moose Racer — a vibrant 3D kart racing game starring Mathilda 'Moose' Oosthuizen and her electric blue & hot pink Porsche GT3 RS. 20 wild circuits, 12 wilder racers.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Titan+One&family=Bungee&family=Baloo+2:wght@500;700;800&family=Bungee+Shade&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<!-- ============ TITLE SCREEN ============ -->
+<div id="screen-title" class="screen">
+  <div class="title-stripes"></div>
+  <div class="title-inner">
+    <div class="title-kicker">MATHILDA "MOOSE" OOSTHUIZEN PRESENTS</div>
+    <h1 class="mega-title"><span class="t-blue">MOOSE</span> <span class="t-pink">RACER</span></h1>
+    <div class="title-sub">12 RACERS &nbsp;•&nbsp; 20 WILD CIRCUITS &nbsp;•&nbsp; 1 PORSCHE GT3&nbsp;RS</div>
+    <button id="btn-start" class="big-btn pulse">START YOUR ENGINE</button>
+    <div class="title-footnote">⚠ Satan has entered the tournament. He will lose. He always loses.</div>
+  </div>
+</div>
+
+<!-- ============ TUTORIAL ============ -->
+<div id="screen-tutorial" class="screen hidden">
+  <div class="panel">
+    <h2 class="panel-title">DRIVING SCHOOL 🏫</h2>
+    <div class="tut-grid">
+      <div class="tut-item"><div class="keys"><kbd>▲</kbd><span class="or">or</span><kbd>W</kbd></div><p>Accelerate</p></div>
+      <div class="tut-item"><div class="keys"><kbd>▼</kbd><span class="or">or</span><kbd>S</kbd></div><p>Brake / Reverse</p></div>
+      <div class="tut-item"><div class="keys"><kbd>◀</kbd><kbd>▶</kbd><span class="or">or</span><kbd>A</kbd><kbd>D</kbd></div><p>Steer</p></div>
+      <div class="tut-item"><div class="keys"><kbd class="wide">SPACE</kbd></div><p>Drift — hold in corners to charge a <b class="t-pink">TURBO&nbsp;BOOST</b>, release to blast off!</p></div>
+      <div class="tut-item"><div class="keys"><kbd>P</kbd><span class="or">or</span><kbd>ESC</kbd></div><p>Pause</p></div>
+      <div class="tut-item"><div class="keys"><kbd>M</kbd></div><p>Music on / off</p></div>
+    </div>
+    <p class="tut-tip">💡 Ride the glowing <b class="t-blue">boost pads</b>, stay on the road, and win 3 laps to unlock the next circuit!</p>
+    <button id="btn-tutorial-done" class="big-btn">GOT IT — LET'S RACE!</button>
+  </div>
+</div>
+
+<!-- ============ CHARACTER SELECT ============ -->
+<div id="screen-charselect" class="screen hidden">
+  <h2 class="screen-heading">CHOOSE YOUR RACER</h2>
+  <div id="char-grid" class="char-grid"></div>
+  <div class="select-footer">
+    <div id="char-blurb" class="char-blurb"></div>
+    <button id="btn-char-done" class="big-btn">PICK CIRCUIT ➜</button>
+  </div>
+</div>
+
+<!-- ============ TRACK SELECT ============ -->
+<div id="screen-trackselect" class="screen hidden">
+  <h2 class="screen-heading">CHOOSE YOUR CIRCUIT</h2>
+  <div id="track-grid" class="track-grid"></div>
+  <div class="select-footer">
+    <button id="btn-back-char" class="small-btn">◀ RACERS</button>
+    <div id="track-blurb" class="char-blurb"></div>
+    <button id="btn-race" class="big-btn">RACE! 🏁</button>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="hud-top">
+    <div id="hud-position"><span id="pos-num">12</span><span id="pos-suffix">th</span></div>
+    <div id="hud-center">
+      <div id="hud-trackname"></div>
+      <div id="hud-lap">LAP 1/3</div>
+    </div>
+    <div id="hud-timer">0:00.0</div>
+  </div>
+  <div id="hud-bottom">
+    <div id="drift-meter"><div id="drift-fill"></div><span id="drift-label">DRIFT</span></div>
+    <div id="hud-speed"><span id="speed-num">0</span><span class="kmh">km/h</span></div>
+  </div>
+  <canvas id="minimap" width="200" height="200"></canvas>
+  <div id="countdown" class="hidden">3</div>
+  <div id="race-toast" class="hidden"></div>
+</div>
+
+<!-- ============ PAUSE ============ -->
+<div id="screen-pause" class="screen hidden">
+  <div class="panel">
+    <h2 class="panel-title">PAUSED ⏸</h2>
+    <button id="btn-resume" class="big-btn">RESUME</button>
+    <button id="btn-restart" class="small-btn">RESTART RACE</button>
+    <button id="btn-quit" class="small-btn">QUIT TO MENU</button>
+  </div>
+</div>
+
+<!-- ============ RESULTS / CELEBRATION ============ -->
+<div id="screen-results" class="screen hidden">
+  <canvas id="confetti-canvas"></canvas>
+  <div class="results-inner">
+    <h1 id="results-title" class="mega-title celebrate">GO TEAM!</h1>
+    <div id="results-sub"></div>
+    <ol id="results-list"></ol>
+    <div class="results-btns">
+      <button id="btn-next-track" class="big-btn">NEXT CIRCUIT ➜</button>
+      <button id="btn-retry" class="small-btn">RETRY</button>
+      <button id="btn-menu" class="small-btn">MENU</button>
+    </div>
+  </div>
+</div>
+
+<div id="rotate-note">Please use a keyboard-equipped device for the full Moose Racer experience! 🏎</div>
+
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
