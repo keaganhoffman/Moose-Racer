@@ -7,6 +7,7 @@ import { CHARACTERS, buildKartFor, toon } from './characters.js';
 import { TRACKS } from './tracks.js';
 import { Race } from './race.js';
 import { initAudio, SFX, startMusic, stopMusic } from './audio.js';
+import { initEnv } from './env.js';
 
 const $ = id => document.getElementById(id);
 
@@ -26,7 +27,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.05;
+const ENV = initEnv(renderer);
 
 let race = null;
 let selectedChar = save.lastChar || 'moose';
@@ -38,6 +40,7 @@ let selectedTrack = 1;
 const menu = (() => {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x150b38);
+  scene.environment = ENV;
   const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
   // frame the podium kart in the lower-right, clear of the selection grid
   camera.position.set(0, 3.6, 10.5);

@@ -4,7 +4,8 @@
 // profile, colour palette, sky, fog, lighting and themed props.
 // ============================================================
 import * as THREE from 'three';
-import { toon } from './characters.js';
+import { toon, chrome } from './characters.js';
+import { getEnv } from './env.js';
 
 // deterministic rng per track so scenery is stable
 function mulberry32(seed) {
@@ -14,6 +15,36 @@ function mulberry32(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// procedural asphalt: bright speckle grain, used as map + bump
+let _asphaltTex = null;
+function asphaltTexture() {
+  if (_asphaltTex) return _asphaltTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#d4d4d8'; x.fillRect(0, 0, 256, 256);
+  let s = 12345;
+  const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  for (let i = 0; i < 5200; i++) {
+    const v = 190 + Math.floor(rnd() * 65);
+    x.fillStyle = `rgb(${v},${v},${v + 4})`;
+    x.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 1.6, 1 + rnd() * 1.6);
+  }
+  for (let i = 0; i < 26; i++) {
+    x.strokeStyle = 'rgba(120,120,128,.25)';
+    x.lineWidth = 0.7;
+    x.beginPath();
+    const sx0 = rnd() * 256, sy0 = rnd() * 256;
+    x.moveTo(sx0, sy0);
+    x.lineTo(sx0 + (rnd() - 0.5) * 40, sy0 + (rnd() - 0.5) * 40);
+    x.stroke();
+  }
+  _asphaltTex = new THREE.CanvasTexture(c);
+  _asphaltTex.wrapS = _asphaltTex.wrapT = THREE.RepeatWrapping;
+  _asphaltTex.anisotropy = 8;
+  return _asphaltTex;
 }
 
 // ---- layout: closed non-intersecting harmonic loop ----
@@ -37,11 +68,19 @@ const P = {
   tree: (rng, c1 = 0x2f9e44, c2 = 0x7a4a21) => {
     const g = new THREE.Group();
     const h = 3 + rng() * 3;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, h * 0.4, 7), toon(c2));
-    trunk.position.y = h * 0.2;
-    const fol = new THREE.Mesh(new THREE.SphereGeometry(h * 0.42, 9, 8), toon(c1));
-    fol.position.y = h * 0.62; fol.scale.y = 1.25;
-    g.add(trunk, fol);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, h * 0.45, 7), toon(c2));
+    trunk.position.y = h * 0.22;
+    const base = new THREE.Color(c1);
+    const blobs = 2 + Math.floor(rng() * 2);
+    for (let i = 0; i < blobs; i++) {
+      const col = base.clone().multiplyScalar(0.88 + rng() * 0.28);
+      const r = h * (0.3 + rng() * 0.16);
+      const fol = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), toon(col.getHex()));
+      fol.position.set((rng() - 0.5) * h * 0.35, h * (0.55 + rng() * 0.25), (rng() - 0.5) * h * 0.35);
+      fol.scale.y = 1.1 + rng() * 0.25;
+      g.add(fol);
+    }
+    g.add(trunk);
     return g;
   },
   pine: (rng, c1 = 0x1e7a3c) => {
@@ -534,6 +573,7 @@ export const ROAD_HALF_WIDTH = 7;
 const SAMPLES = 700;
 
 export function buildTrack(def, scene) {
+  scene.environment = getEnv();
   const rng = mulberry32(def.seed);
   const pts = harmonicLoop(def.layout);
   const curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal', 0.6);
@@ -551,7 +591,7 @@ export function buildTrack(def, scene) {
 
   // ---- road: flat asphalt ribbon with per-row tonal noise ----
   const W = ROAD_HALF_WIDTH;
-  const verts = [], cols = [], idx = [];
+  const verts = [], cols = [], idx = [], uvs = [];
   const cRoad = new THREE.Color(def.pal.road);
   const cE1 = new THREE.Color(def.pal.edge1);
   const cE2 = new THREE.Color(def.pal.edge2);
@@ -568,6 +608,7 @@ export function buildTrack(def, scene) {
     for (const off of [-W - 0.15, W + 0.15]) {
       verts.push(s.p.x + s.lat.x * off, s.p.y + 0.02, s.p.z + s.lat.z * off);
       cols.push(tmp.r, tmp.g, tmp.b);
+      uvs.push(off > 0 ? 2.2 : 0, i * 0.42);
     }
     if (i < SAMPLES) {
       const a = i * 2, b = (i + 1) * 2;
@@ -577,11 +618,17 @@ export function buildTrack(def, scene) {
   const roadGeo = new THREE.BufferGeometry();
   roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
   roadGeo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   roadGeo.setIndex(idx);
   roadGeo.computeVertexNormals();
-  const roadMat = new THREE.MeshToonMaterial({
+  const roadMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
+    map: def.pal.rainbow ? null : asphaltTexture(),
+    bumpMap: asphaltTexture(),
+    bumpScale: 4,
+    roughness: 0.94,
+    metalness: 0,
     emissive: def.pal.glowRoad ? 0x222233 : 0x000000,
     emissiveIntensity: def.pal.glowRoad ? 1 : 0,
   });
@@ -827,6 +874,91 @@ export function buildTrack(def, scene) {
       posts.castShadow = true;
       scene.add(posts);
     }
+
+    // tire-stack barriers at the entry and exit of every guarded corner
+    const tireMat = toon(0x1d1d26);
+    const tireTopMat = toon(0xf2f2f2);
+    for (const r of railRuns) {
+      for (const end of [r.pts[0], r.pts[r.pts.length - 1]]) {
+        const s = samples[end];
+        const x = s.p.x + s.lat.x * r.side * (W + 3.8);
+        const z = s.p.z + s.lat.z * r.side * (W + 3.8);
+        const stack = new THREE.Group();
+        for (let k = 0; k < 3; k++) {
+          const t = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.21, 8, 16), k === 2 ? tireTopMat : tireMat);
+          t.rotation.x = Math.PI / 2;
+          t.position.y = 0.22 + k * 0.4;
+          stack.add(t);
+        }
+        stack.position.set(x, s.p.y - 0.15, z);
+        stack.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        scene.add(stack);
+      }
+    }
+
+    // chevron warning boards ahead of the sharpest corners
+    let boards = 0;
+    for (const r of railRuns) {
+      if (boards >= 8 || r.pts.length < 8) continue;
+      boards++;
+      const bi = (r.pts[0] - 18 + SAMPLES) % SAMPLES;
+      const s = samples[bi];
+      const cc = document.createElement('canvas');
+      cc.width = 256; cc.height = 128;
+      const cx = cc.getContext('2d');
+      cx.fillStyle = '#fffdf7'; cx.fillRect(0, 0, 256, 128);
+      cx.strokeStyle = '#1b1440'; cx.lineWidth = 10; cx.strokeRect(5, 5, 246, 118);
+      cx.fillStyle = '#' + def.pal.edge1.toString(16).padStart(6, '0');
+      for (let a = 0; a < 3; a++) {
+        const ox = r.side > 0 ? 196 - a * 70 : 60 + a * 70;
+        cx.beginPath();
+        cx.moveTo(ox, 24); cx.lineTo(ox - 44 * r.side, 64); cx.lineTo(ox, 104);
+        cx.lineTo(ox - 22 * r.side, 64); cx.closePath(); cx.fill();
+      }
+      const bTex = new THREE.CanvasTexture(cc);
+      bTex.colorSpace = THREE.SRGBColorSpace;
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.3), new THREE.MeshBasicMaterial({ map: bTex, side: THREE.DoubleSide }));
+      const bx = s.p.x + s.lat.x * r.side * (W + 2.6);
+      const bz = s.p.z + s.lat.z * r.side * (W + 2.6);
+      board.position.set(bx, s.p.y + 1.5, bz);
+      board.lookAt(bx - s.tan.x, s.p.y + 1.5, bz - s.tan.z);
+      const bpost = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.6, 7), toon(0x8a8a96));
+      bpost.position.set(bx, s.p.y + 0.5, bz);
+      board.castShadow = bpost.castShadow = true;
+      scene.add(board, bpost);
+    }
+
+    // floodlight towers on night circuits
+    if (def.night) {
+      const lc = document.createElement('canvas');
+      lc.width = lc.height = 64;
+      const lx = lc.getContext('2d');
+      const lg = lx.createRadialGradient(32, 32, 3, 32, 32, 30);
+      lg.addColorStop(0, 'rgba(255,250,230,1)');
+      lg.addColorStop(1, 'rgba(255,250,230,0)');
+      lx.fillStyle = lg; lx.fillRect(0, 0, 64, 64);
+      const lTex = new THREE.CanvasTexture(lc);
+      for (let k = 0; k < 8; k++) {
+        const s = samples[Math.floor((k / 8) * SAMPLES)];
+        const side = k % 2 ? 1 : -1;
+        const x = s.p.x + s.lat.x * side * (W + 5.5);
+        const z = s.p.z + s.lat.z * side * (W + 5.5);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 9, 8), toon(0x3a3a48));
+        pole.position.set(x, s.p.y + 4, z);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.5, 0.5),
+          toon(0xf6f2e2, { emissive: 0xfff2c0, emissiveIntensity: 1.6 }));
+        head.position.set(x, s.p.y + 8.6, z);
+        head.lookAt(s.p.x, s.p.y, s.p.z);
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: lTex, color: 0xfff4cc, transparent: true, opacity: 0.85,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        halo.position.set(x, s.p.y + 8.6, z);
+        halo.scale.setScalar(4.5);
+        pole.castShadow = true;
+        scene.add(pole, head, halo);
+      }
+    }
   }
 
   // ---- terrain: rolling hills with a flat apron along the road ----
@@ -935,8 +1067,8 @@ export function buildTrack(def, scene) {
 
   // ---- fog & lights ----
   scene.fog = new THREE.Fog(def.pal.fog, def.night ? 90 : 140, def.night ? 420 : 620);
-  const hemi = new THREE.HemisphereLight(def.pal.skyTop, def.pal.ground, def.night ? 0.7 : 1.1);
-  const sun = new THREE.DirectionalLight(def.night ? 0xaab8ff : 0xfff4d6, def.night ? 0.9 : 1.6);
+  const hemi = new THREE.HemisphereLight(def.pal.skyTop, def.pal.ground, def.night ? 0.7 : 0.85);
+  const sun = new THREE.DirectionalLight(def.night ? 0xaab8ff : 0xfff4d6, def.night ? 0.9 : 1.35);
   sun.position.set(120, 180, 80);
   // real-time shadows: the shadow camera follows the player (see race.js)
   sun.castShadow = true;
@@ -946,7 +1078,7 @@ export function buildTrack(def, scene) {
   sun.shadow.camera.near = 20; sun.shadow.camera.far = 480;
   sun.shadow.bias = -0.0006;
   const sunDir = sun.position.clone().normalize();
-  const amb = new THREE.AmbientLight(0xffffff, def.night ? 0.4 : 0.5);
+  const amb = new THREE.AmbientLight(0xffffff, def.night ? 0.4 : 0.36);
   scene.add(hemi, sun, sun.target, amb);
 
   // ---- decorations ----

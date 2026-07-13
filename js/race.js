@@ -7,6 +7,11 @@ import * as THREE from 'three';
 import { CHARACTERS, buildKartFor } from './characters.js';
 import { buildTrack, ROAD_HALF_WIDTH } from './tracks.js';
 import { SFX, startEngine, setEngine, stopEngine, startMusic, stopMusic } from './audio.js';
+import { getEnv } from './env.js';
+import { EffectComposer } from '../vendor/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../vendor/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '../vendor/jsm/postprocessing/OutputPass.js';
 
 const LAPS = 5;
 const BASE_SPEED = 46;          // world units / s at speed stat 1.0
@@ -73,6 +78,44 @@ class Particles {
   }
 }
 
+// persistent rubber laid down while drifting — the track remembers your laps
+class SkidMarks {
+  constructor(scene, maxSegs = 700) {
+    this.max = maxSegs;
+    this.cursor = 0;
+    this.prev = null;
+    const geo = new THREE.BufferGeometry();
+    this.posArr = new Float32Array(maxSegs * 4 * 3).fill(-999);
+    const idx = new Uint32Array(maxSegs * 6);
+    for (let s = 0; s < maxSegs; s++) {
+      const b = s * 4, o = s * 6;
+      idx[o] = b; idx[o + 1] = b + 2; idx[o + 2] = b + 1;
+      idx[o + 3] = b + 1; idx[o + 4] = b + 2; idx[o + 5] = b + 3;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(this.posArr, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0x14141c, transparent: true, opacity: 0.38,
+      depthWrite: false, side: THREE.DoubleSide,
+    }));
+    this.mesh.renderOrder = 1;
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
+  }
+  add(l, r) {
+    if (this.prev) {
+      const b = this.cursor * 12;
+      this.posArr.set([this.prev[0].x, this.prev[0].y, this.prev[0].z,
+                       this.prev[1].x, this.prev[1].y, this.prev[1].z,
+                       l.x, l.y, l.z, r.x, r.y, r.z], b);
+      this.cursor = (this.cursor + 1) % this.max;
+      this.mesh.geometry.attributes.position.needsUpdate = true;
+    }
+    this.prev = [l.clone(), r.clone()];
+  }
+  break() { this.prev = null; }
+}
+
 export class Race {
   constructor({ renderer, trackDef, playerCharId, onFinish, onQuitToMenu }) {
     this.renderer = renderer;
@@ -84,9 +127,23 @@ export class Race {
     this.paused = false;
 
     this.scene = new THREE.Scene();
+    this.scene.environment = getEnv();
     this.camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 2000);
     this.track = buildTrack(trackDef, this.scene);
     this.particles = new Particles(this.scene);
+    this.skids = new SkidMarks(this.scene);
+
+    // post-processing: bloom makes neon, halos and flames actually glow
+    const rt = new THREE.WebGLRenderTarget(2, 2, { samples: 4, type: THREE.HalfFloatType });
+    this.composer = new EffectComposer(renderer, rt);
+    this.composer.setPixelRatio(renderer.getPixelRatio());
+    this.composer.setSize(innerWidth, innerHeight);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      trackDef.night ? 0.5 : 0.4, 0.5, trackDef.night ? 0.72 : 1.05);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
     this.clock = new THREE.Clock();
     this.elapsed = 0;
     this.raceTime = 0;
@@ -139,6 +196,29 @@ export class Race {
         stuckT: 0,
         animParts: [],
       };
+      // headlight glows on night circuits
+      if (this.trackDef.night) {
+        if (!this._hlTex) {
+          const hc = document.createElement('canvas');
+          hc.width = hc.height = 64;
+          const hx = hc.getContext('2d');
+          const hg = hx.createRadialGradient(32, 32, 2, 32, 32, 30);
+          hg.addColorStop(0, 'rgba(255,246,214,1)');
+          hg.addColorStop(1, 'rgba(255,246,214,0)');
+          hx.fillStyle = hg; hx.fillRect(0, 0, 64, 64);
+          this._hlTex = new THREE.CanvasTexture(hc);
+        }
+        const bb = new THREE.Box3().setFromObject(built.group);
+        for (const sx of [-1, 1]) {
+          const beam = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: this._hlTex, color: 0xfff2c4, transparent: true, opacity: 0.7,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+          }));
+          beam.position.set(sx * 0.38, 0.52, bb.min.z + 0.18);
+          beam.scale.setScalar(0.55);
+          built.group.add(beam);
+        }
+      }
       // collect animated sub-parts (flames, tails, halos, wings…)
       built.group.traverse(o => {
         if (o.userData.flicker || o.userData.wag || o.userData.halo || o.userData.wings || o.userData.sway) {
@@ -495,6 +575,17 @@ export class Race {
       // drift pose: nose points into the corner while the velocity slides outward
       g.rotation.set(slope, kart.heading - kart.driftYaw * 0.6 + Math.PI, kart.steer * -0.08 + kart.driftYaw * -0.25);
 
+      // skid marks from the rear axle while drifting on tarmac
+      if (kart.isPlayer) {
+        if (kart.drifting && !kart.offroad && Math.abs(kart.speed) > 10) {
+          const fx = Math.sin(kart.heading), fz = Math.cos(kart.heading);
+          const rx = fz, rz = -fx;
+          const bx = kart.pos.x - fx * 1.05, bz = kart.pos.z - fz * 1.05;
+          this.skids.add(
+            new THREE.Vector3(bx + rx * 0.58, kart.pos.y + 0.035, bz + rz * 0.58),
+            new THREE.Vector3(bx - rx * 0.58, kart.pos.y + 0.035, bz - rz * 0.58));
+        } else this.skids.break();
+      }
       // drift sparks
       if (kart.drifting && kart.isPlayer) {
         const col = kart.driftCharge > 0.8 ? 0xff3ea5 : kart.driftCharge > 0.45 ? 0xffd93d : 0x00c2ff;
@@ -624,7 +715,7 @@ export class Race {
     if (this.disposed) return;
     requestAnimationFrame(this._loop);
     const dt = Math.min(this.clock.getDelta(), 0.05);
-    if (this.paused) { this.renderer.render(this.scene, this.camera); return; }
+    if (this.paused) { this.composer.render(); return; }
     this.elapsed += dt;
     const t = this.elapsed;
 
@@ -657,7 +748,7 @@ export class Race {
       this.camHeading = p.heading;
       this._updateVisualsStatic(dt, t);
       this._drawMinimap();
-      this.renderer.render(this.scene, this.camera);
+      this.composer.render();
       return;
     }
 
@@ -676,7 +767,7 @@ export class Race {
     this._updateHUD(dt);
     this._drawMinimap();
     setEngine(Math.abs(this.player.speed) / BASE_SPEED, this.player.boost > 0);
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   _updateVisualsStatic(dt, t) {
@@ -690,10 +781,13 @@ export class Race {
   resize() {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
+    this.composer.setSize(innerWidth, innerHeight);
+    this.bloom.setSize(innerWidth, innerHeight);
   }
 
   dispose() {
     this.disposed = true;
+    this.composer.dispose();
     removeEventListener('keydown', this._down);
     removeEventListener('keyup', this._up);
     stopEngine();
