@@ -288,7 +288,7 @@ export class Race {
     // finish detection
     if (!kart.finished && kart.lap > LAPS) {
       kart.finished = true;
-      kart.finishTime = this.raceTime + (kart.isPlayer ? 0 : Math.random() * 0.2);
+      kart.finishTime = this.raceTime;
       if (kart.isPlayer) this._playerFinished();
     }
   }
