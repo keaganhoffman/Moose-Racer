@@ -21,6 +21,44 @@ export function toon(color, opts = {}) {
   return new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), ...opts });
 }
 
+// glossy clearcoat car paint — picks up the shared PMREM environment
+export function carPaint(color, opts = {}) {
+  // clamp very light paints so white karts keep their shape in full sun
+  const c = new THREE.Color(color);
+  const hsl = {};
+  c.getHSL(hsl);
+  if (hsl.l > 0.72) c.setHSL(hsl.h, hsl.s, 0.72);
+  return new THREE.MeshPhysicalMaterial({
+    color: c, clearcoat: 1, clearcoatRoughness: 0.15,
+    metalness: 0.12, roughness: 0.38, envMapIntensity: 0.75, ...opts,
+  });
+}
+
+export function chrome(color = 0xd8dce8) {
+  return new THREE.MeshStandardMaterial({ color, metalness: 1, roughness: 0.25, envMapIntensity: 0.9 });
+}
+
+// rounded box: sharp primitives read "low budget"; this reads "moulded"
+export function roundedBox(w, h, d, r, s = 3) {
+  r = Math.min(r, w / 2, h / 2, d / 2);
+  const geo = new THREE.BoxGeometry(w, h, d, s, s, s);
+  const pos = geo.attributes.position;
+  const hw = w / 2 - r, hh = h / 2 - r, hd = d / 2 - r;
+  const v = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    c.set(
+      THREE.MathUtils.clamp(v.x, -hw, hw),
+      THREE.MathUtils.clamp(v.y, -hh, hh),
+      THREE.MathUtils.clamp(v.z, -hd, hd));
+    v.sub(c);
+    if (v.lengthSq() > 1e-9) v.normalize().multiplyScalar(r);
+    pos.setXYZ(i, c.x + v.x, c.y + v.y, c.z + v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 // small cached geometries
 const G = {
   sphere: (r, w = 12, h = 10) => new THREE.SphereGeometry(r, w, h),
@@ -63,9 +101,9 @@ function makeWheel(radius, width, rimColor) {
   const spinner = new THREE.Group();
   const tire = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.66, radius * 0.36, 10, 18), toon(0x262630));
   tire.rotation.y = Math.PI / 2;
-  const rim = mesh(G.cyl(radius * 0.6, radius * 0.6, width * 0.72, 14), toon(rimColor));
+  const rim = mesh(G.cyl(radius * 0.6, radius * 0.6, width * 0.72, 14), carPaint(rimColor, { metalness: 0.6, roughness: 0.3 }));
   rim.rotation.z = Math.PI / 2;
-  const spokeMat = toon(0xe8ecf4);
+  const spokeMat = chrome(0xe8ecf4);
   for (let i = 0; i < 5; i++) {
     const spoke = mesh(G.box(width * 0.5, radius * 1.02, radius * 0.16), spokeMat);
     spoke.rotation.x = (i / 5) * Math.PI * 2;
@@ -139,17 +177,17 @@ let _activeChar = null;
 // ---- generic cartoon kart chassis; characters decorate on top ----
 function makeStandardKart({ body, accent, rim = 0xf2f2f2, long = 2.4, wide = 1.5, nose = 'round' }) {
   const g = new THREE.Group();
-  const bodyMat = toon(body);
-  const accentMat = toon(accent);
+  const bodyMat = carPaint(body);
+  const accentMat = carPaint(accent);
 
-  const tub = mesh(G.box(wide, 0.42, long), bodyMat, 0, 0.42, 0);
+  const tub = mesh(roundedBox(wide, 0.46, long, 0.14), bodyMat, 0, 0.43, 0);
   const front = nose === 'round'
     ? mesh(G.sphere(wide * 0.48, 12, 10), bodyMat, 0, 0.46, -long / 2)
     : mesh(G.cone(wide * 0.44, 0.9, 4), bodyMat, 0, 0.46, -long / 2 - 0.25);
   if (nose !== 'round') { front.rotation.x = -Math.PI / 2; front.rotation.y = Math.PI / 4; }
   front.scale.y = 0.6;
-  const seatBack = mesh(G.box(wide * 0.8, 0.55, 0.18), accentMat, 0, 0.85, long * 0.32);
-  const bumper = mesh(G.box(wide * 1.05, 0.2, 0.22), accentMat, 0, 0.35, -long / 2 - 0.05);
+  const seatBack = mesh(roundedBox(wide * 0.8, 0.58, 0.2, 0.08), accentMat, 0, 0.85, long * 0.32);
+  const bumper = mesh(roundedBox(wide * 1.05, 0.22, 0.26, 0.08), accentMat, 0, 0.35, -long / 2 - 0.05);
   const stripe = mesh(G.box(wide * 0.35, 0.05, long * 0.96), accentMat, 0, 0.66, 0);
   const wheelHolder = new THREE.Group();
   const wheels = [];
@@ -163,15 +201,15 @@ function makeStandardKart({ body, accent, rim = 0xf2f2f2, long = 2.4, wide = 1.5
   const steering = mesh(G.torus(0.16, 0.035, 8, 14), toon(0x333333), 0, 0.86, -0.35);
   steering.rotation.x = -Math.PI / 3;
   // darker lower skirt for depth, mirrors, exhaust — small details read as "finished"
-  const skirt = mesh(G.box(wide * 1.04, 0.18, long * 0.96), toon(new THREE.Color(body).multiplyScalar(0.62).getHex()), 0, 0.2, 0);
-  const mirrorMat = toon(0x2c2c36);
+  const skirt = mesh(roundedBox(wide * 1.06, 0.2, long * 0.96, 0.07), carPaint(new THREE.Color(body).multiplyScalar(0.62).getHex(), { roughness: 0.55 }), 0, 0.2, 0);
+  const mirrorMat = chrome();
   for (const s of [-1, 1]) {
     const mirror = mesh(G.box(0.07, 0.1, 0.16), mirrorMat, s * (wide / 2 + 0.12), 0.72, -long * 0.28);
     const stalk = mesh(G.cyl(0.025, 0.025, 0.14, 5), mirrorMat, s * (wide / 2 + 0.05), 0.68, -long * 0.28);
     stalk.rotation.z = s * 1.1;
     g.add(mirror, stalk);
   }
-  const exhaust = mesh(G.cyl(0.08, 0.1, 0.34, 8), toon(0x8a8a96), wide * 0.28, 0.32, long / 2 + 0.12);
+  const exhaust = mesh(G.cyl(0.08, 0.1, 0.34, 10), chrome(), wide * 0.28, 0.32, long / 2 + 0.12);
   exhaust.rotation.x = Math.PI / 2;
   g.add(tub, front, seatBack, bumper, stripe, wheelHolder, steering, skirt, exhaust);
   // racing number: on the hood and on the seat back
@@ -190,19 +228,22 @@ function makeStandardKart({ body, accent, rim = 0xf2f2f2, long = 2.4, wide = 1.5
 function buildPorscheGT3RS() {
   const BLUE = 0x00c2ff, PINK = 0xff3ea5;
   const g = new THREE.Group();
-  const blueMat = toon(BLUE);
-  const pinkMat = toon(PINK);
-  const darkGlass = toon(0x143050);
+  const blueMat = carPaint(BLUE);
+  const pinkMat = carPaint(PINK);
+  const darkGlass = new THREE.MeshPhysicalMaterial({
+    color: 0x1a3a5c, metalness: 0.1, roughness: 0.05, clearcoat: 1,
+    transparent: true, opacity: 0.85, envMapIntensity: 1.6,
+  });
 
   // low wide body with sloping hood + fastback
-  const body = mesh(G.box(1.6, 0.42, 3.4), blueMat, 0, 0.5, 0);
-  const hood = mesh(G.box(1.5, 0.3, 1.2), blueMat, 0, 0.56, -1.35);
+  const body = mesh(roundedBox(1.6, 0.46, 3.4, 0.15), blueMat, 0, 0.52, 0);
+  const hood = mesh(roundedBox(1.5, 0.3, 1.2, 0.1), blueMat, 0, 0.56, -1.35);
   hood.rotation.x = 0.09;
   const noseLip = mesh(G.box(1.66, 0.16, 0.5), pinkMat, 0, 0.34, -1.85);
-  const cabin = mesh(G.box(1.25, 0.5, 1.5), darkGlass, 0, 0.92, 0.12);
+  const cabin = mesh(roundedBox(1.25, 0.52, 1.5, 0.16), darkGlass, 0, 0.92, 0.12);
   cabin.scale.set(1, 1, 1);
   const roof = mesh(G.box(1.15, 0.1, 1.3), blueMat, 0, 1.18, 0.12);
-  const tail = mesh(G.box(1.58, 0.36, 0.7), blueMat, 0, 0.62, 1.55);
+  const tail = mesh(roundedBox(1.58, 0.38, 0.72, 0.12), blueMat, 0, 0.62, 1.55);
   // signature giant swan-neck rear wing (hot pink)
   const wingPlane = mesh(G.box(1.85, 0.07, 0.55), pinkMat, 0, 1.42, 1.75);
   wingPlane.rotation.x = -0.12;
@@ -225,7 +266,7 @@ function buildPorscheGT3RS() {
   const wingNum = roundel(1, BLUE, 0.4);
   wingNum.position.set(0, 0.78, 1.92);
   g.add(hoodNum, wingNum);
-  const exhaustMat = toon(0x777788);
+  const exhaustMat = chrome();
   const exL = mesh(G.cyl(0.09, 0.09, 0.3, 10), exhaustMat, -0.3, 0.4, 1.95);
   exL.rotation.x = Math.PI / 2;
   const exR = exL.clone(); exR.position.x = 0.3;
@@ -236,6 +277,9 @@ function buildPorscheGT3RS() {
     w.position.set(sx * 0.88, 0.4, sz * 1.25);
     wheels.push(w);
     g.add(w);
+    const fender = mesh(G.sphere(0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), blueMat, sx * 0.78, 0.42, sz * 1.25);
+    fender.scale.set(0.7, 0.72, 1.05);
+    g.add(fender);
   }
   g.add(body, hood, noseLip, cabin, roof, tail, wingPlane, strutL, strutR,
         endplateL, endplateR, stripeC, hlL, hlR, skirtL, skirtR, exL, exR);
@@ -489,7 +533,7 @@ const BUILDERS = {
     const seatZ = k.seatZ;
     const d = new THREE.Group();
     // big shell dome
-    const shell = mesh(G.sphere(0.75, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), toon(0xe0559e), 0, 0.55, seatZ);
+    const shell = mesh(G.sphere(0.75, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2), carPaint(0xe0559e, { clearcoatRoughness: 0.05 }), 0, 0.55, seatZ);
     const shellRim = mesh(G.torus(0.72, 0.09, 8, 22), toon(0xff8fc8), 0, 0.58, seatZ);
     shellRim.rotation.x = Math.PI / 2;
     // hex spots
