@@ -57,15 +57,84 @@ function addEyes(head, r, y, zForward, spacing, opts = {}) {
   }
 }
 
+// chunky cartoon wheel: rounded tire, dished rim, five spokes, hub cap
 function makeWheel(radius, width, rimColor) {
   const wheel = new THREE.Group();
-  const tire = mesh(G.cyl(radius, radius, width, 16), toon(0x22222a));
-  tire.rotation.z = Math.PI / 2;
-  const rim = mesh(G.cyl(radius * 0.55, radius * 0.55, width + 0.02, 10), toon(rimColor));
+  const spinner = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.66, radius * 0.36, 10, 18), toon(0x262630));
+  tire.rotation.y = Math.PI / 2;
+  const rim = mesh(G.cyl(radius * 0.6, radius * 0.6, width * 0.72, 14), toon(rimColor));
   rim.rotation.z = Math.PI / 2;
-  wheel.add(tire, rim);
+  const spokeMat = toon(0xe8ecf4);
+  for (let i = 0; i < 5; i++) {
+    const spoke = mesh(G.box(width * 0.5, radius * 1.02, radius * 0.16), spokeMat);
+    spoke.rotation.x = (i / 5) * Math.PI * 2;
+    spinner.add(spoke);
+  }
+  const cap = mesh(G.sphere(radius * 0.24, 10, 8), toon(0x33333d));
+  cap.scale.x = 0.5;
+  spinner.add(tire, rim, cap);
+  wheel.add(spinner);
   return wheel;
 }
+
+// straight limb between two points (axis pre-rotated so lookAt works)
+function limb(mat, x1, y1, z1, x2, y2, z2, r = 0.055) {
+  const len = Math.hypot(x2 - x1, y2 - y1, z2 - z1);
+  const geo = new THREE.CylinderGeometry(r, r * 1.15, len, 7);
+  geo.rotateX(Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+  m.lookAt(x2, y2, z2);
+  return m;
+}
+
+// ---- racing-number roundel decals (canvas textures) ----
+const _roundelCache = new Map();
+function roundelTexture(num, accent) {
+  const key = `${num}-${accent}`;
+  if (_roundelCache.has(key)) return _roundelCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.beginPath(); x.arc(64, 64, 60, 0, Math.PI * 2);
+  x.fillStyle = '#fffdf7'; x.fill();
+  x.lineWidth = 10;
+  x.strokeStyle = '#' + accent.toString(16).padStart(6, '0');
+  x.stroke();
+  x.fillStyle = '#1b1440';
+  x.font = '900 64px "Titan One", "Arial Black", sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(String(num), 64, 70);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _roundelCache.set(key, tex);
+  return tex;
+}
+
+function roundel(num, accent, size = 0.56) {
+  const mat = new THREE.MeshBasicMaterial({ map: roundelTexture(num, accent), transparent: true });
+  return new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+}
+
+// ---- soft accent underglow (classic kart-game ground pop) ----
+let _glowTex = null;
+function glowTexture() {
+  if (_glowTex) return _glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 6, 64, 64, 62);
+  g.addColorStop(0, 'rgba(255,255,255,.9)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  _glowTex = new THREE.CanvasTexture(c);
+  return _glowTex;
+}
+
+// current character being built — lets shared chassis code read number/colors
+let _activeChar = null;
 
 // ---- generic cartoon kart chassis; characters decorate on top ----
 function makeStandardKart({ body, accent, rim = 0xf2f2f2, long = 2.4, wide = 1.5, nose = 'round' }) {
@@ -93,7 +162,27 @@ function makeStandardKart({ body, accent, rim = 0xf2f2f2, long = 2.4, wide = 1.5
   }
   const steering = mesh(G.torus(0.16, 0.035, 8, 14), toon(0x333333), 0, 0.86, -0.35);
   steering.rotation.x = -Math.PI / 3;
-  g.add(tub, front, seatBack, bumper, stripe, wheelHolder, steering);
+  // darker lower skirt for depth, mirrors, exhaust — small details read as "finished"
+  const skirt = mesh(G.box(wide * 1.04, 0.18, long * 0.96), toon(new THREE.Color(body).multiplyScalar(0.62).getHex()), 0, 0.2, 0);
+  const mirrorMat = toon(0x2c2c36);
+  for (const s of [-1, 1]) {
+    const mirror = mesh(G.box(0.07, 0.1, 0.16), mirrorMat, s * (wide / 2 + 0.12), 0.72, -long * 0.28);
+    const stalk = mesh(G.cyl(0.025, 0.025, 0.14, 5), mirrorMat, s * (wide / 2 + 0.05), 0.68, -long * 0.28);
+    stalk.rotation.z = s * 1.1;
+    g.add(mirror, stalk);
+  }
+  const exhaust = mesh(G.cyl(0.08, 0.1, 0.34, 8), toon(0x8a8a96), wide * 0.28, 0.32, long / 2 + 0.12);
+  exhaust.rotation.x = Math.PI / 2;
+  g.add(tub, front, seatBack, bumper, stripe, wheelHolder, steering, skirt, exhaust);
+  // racing number: on the hood and on the seat back
+  if (_activeChar) {
+    const hoodNum = roundel(_activeChar.num, accent, 0.55);
+    hoodNum.rotation.set(-Math.PI / 2, 0, Math.PI);
+    hoodNum.position.set(0, 0.695, -long * 0.3);
+    const rearNum = roundel(_activeChar.num, accent, 0.42);
+    rearNum.position.set(0, 0.88, long * 0.32 + 0.1);
+    g.add(hoodNum, rearNum);
+  }
   return { group: g, wheels, bodyMat, accentMat, seatZ: long * 0.12 };
 }
 
@@ -130,7 +219,12 @@ function buildPorscheGT3RS() {
   // side skirts + number roundel
   const skirtL = mesh(G.box(0.1, 0.14, 2.2), pinkMat, -0.84, 0.32, 0);
   const skirtR = mesh(G.box(0.1, 0.14, 2.2), pinkMat, 0.84, 0.32, 0);
-  const roundel = mesh(G.cyl(0.34, 0.34, 0.03, 20), toon(0xffffff), 0, 0.585, -1.1);
+  const hoodNum = roundel(1, PINK, 0.66);
+  hoodNum.rotation.set(-Math.PI / 2 + 0.09, 0, Math.PI);
+  hoodNum.position.set(0, 0.73, -1.1);
+  const wingNum = roundel(1, BLUE, 0.4);
+  wingNum.position.set(0, 0.78, 1.92);
+  g.add(hoodNum, wingNum);
   const exhaustMat = toon(0x777788);
   const exL = mesh(G.cyl(0.09, 0.09, 0.3, 10), exhaustMat, -0.3, 0.4, 1.95);
   exL.rotation.x = Math.PI / 2;
@@ -144,7 +238,7 @@ function buildPorscheGT3RS() {
     g.add(w);
   }
   g.add(body, hood, noseLip, cabin, roof, tail, wingPlane, strutL, strutR,
-        endplateL, endplateR, stripeC, hlL, hlR, skirtL, skirtR, roundel, exL, exR);
+        endplateL, endplateR, stripeC, hlL, hlR, skirtL, skirtR, exL, exR);
 
   // Moose herself — pink helmet with tiny moose antlers, peeking from cockpit
   const driver = new THREE.Group();
@@ -167,9 +261,17 @@ function buildPorscheGT3RS() {
 // ---- per-character driver figures for standard karts ----
 function driverBase(skin, shirt, seatZ) {
   const d = new THREE.Group();
-  const torso = mesh(G.sphere(0.34, 12, 10), toon(shirt), 0, 0.85, seatZ);
+  const shirtMat = toon(shirt);
+  const skinMat = toon(skin);
+  const torso = mesh(G.sphere(0.34, 12, 10), shirtMat, 0, 0.85, seatZ);
   torso.scale.set(1, 1.15, 0.85);
-  const head = mesh(G.sphere(0.3, 14, 12), toon(skin), 0, 1.42, seatZ);
+  const head = mesh(G.sphere(0.3, 14, 12), skinMat, 0, 1.42, seatZ);
+  // arms reaching the wheel + gloves — drivers should look like they're driving
+  for (const s of [-1, 1]) {
+    const arm = limb(shirtMat, s * 0.3, 1.04, seatZ, s * 0.14, 0.92, -0.26);
+    const hand = mesh(G.sphere(0.075, 8, 6), skinMat, s * 0.14, 0.92, -0.3);
+    d.add(arm, hand);
+  }
   d.add(torso, head);
   return { d, head, seatZ };
 }
@@ -530,8 +632,24 @@ export const CHARACTERS = [
     stats: { speed: 0.6, accel: 0.6, handling: 0.5 } },
 ];
 
+CHARACTERS.forEach((c, i) => { c.num = i + 1; });
+
 export function buildKartFor(charId) {
+  const char = CHARACTERS.find(c => c.id === charId);
+  _activeChar = char;
   const built = BUILDERS[charId]();
+  _activeChar = null;
+  // soft accent-coloured underglow anchors the kart to the road
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: glowTexture(), color: char.accent, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.8), glowMat);
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = 0.06;
+  glow.renderOrder = 1;
+  built.group.add(glow);
   built.group.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+  glow.castShadow = false;
   return built;
 }
