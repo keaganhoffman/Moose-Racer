@@ -111,7 +111,10 @@ export class Race {
       const built = buildKartFor(id);
       const slot = startPositions[i];
       built.group.position.copy(slot.pos);
-      built.group.rotation.y = slot.heading;
+      // models are built nose-toward--Z; movement heading points toward +Z at 0,
+      // so the mesh needs a half-turn to face its direction of travel
+      built.group.rotation.order = 'YXZ';
+      built.group.rotation.y = slot.heading + Math.PI;
       this.scene.add(built.group);
       const kart = {
         id, char, built, isPlayer: id === this.playerCharId,
@@ -302,7 +305,8 @@ export class Race {
     let dAng = desired - kart.heading;
     while (dAng > Math.PI) dAng -= Math.PI * 2;
     while (dAng < -Math.PI) dAng += Math.PI * 2;
-    const steer = THREE.MathUtils.clamp(dAng * 2.4, -1, 1);
+    // positive steer decreases heading (same convention as player input), so steer against dAng
+    const steer = THREE.MathUtils.clamp(-dAng * 2.4, -1, 1);
 
     // slow slightly for big curvature ahead
     const tanNow = samples[kart.si].tan, tanFar = samples[lookFar].tan;
@@ -432,11 +436,12 @@ export class Race {
     for (const kart of this.karts) {
       const g = kart.built.group;
       g.position.copy(kart.pos);
-      // slope pitch
+      // slope pitch (YXZ order: yaw first, then pitch/roll in the kart's own frame)
       const s = this.track.samples[kart.si];
       const ahead = this.track.samples[(kart.si + 6) % this.track.SAMPLES];
       const slope = Math.atan2(ahead.p.y - s.p.y, 6 * (this.track.length / this.track.SAMPLES));
-      g.rotation.set(-slope * Math.cos(kart.driftYaw), kart.heading + kart.driftYaw, kart.steer * -0.08 + kart.driftYaw * -0.25);
+      // drift pose: nose points into the corner while the velocity slides outward
+      g.rotation.set(slope, kart.heading - kart.driftYaw * 0.6 + Math.PI, kart.steer * -0.08 + kart.driftYaw * -0.25);
 
       // drift sparks
       if (kart.drifting && kart.isPlayer) {
