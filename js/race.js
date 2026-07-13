@@ -86,6 +86,7 @@ export class Race {
     this.toastQueue = [];
 
     this._buildKarts();
+    this._buildLeaderboard();
     this._bindInput();
 
     this.minimapCtx = $('minimap').getContext('2d');
@@ -384,11 +385,52 @@ export class Race {
     else if (rank <= 3) SFX.lap();
   }
 
-  _rankOf(kart) {
-    const sorted = [...this.karts].sort((a, b) =>
+  _standings() {
+    return [...this.karts].sort((a, b) =>
       (a.finished && b.finished) ? a.finishTime - b.finishTime :
       a.finished ? -1 : b.finished ? 1 : b.progress - a.progress);
-    return sorted.indexOf(kart) + 1;
+  }
+
+  _rankOf(kart) {
+    return this._standings().indexOf(kart) + 1;
+  }
+
+  // ---------- live leaderboard ----------
+  _buildLeaderboard() {
+    const ROW = 25;
+    const lb = $('leaderboard');
+    lb.innerHTML = '';
+    lb.style.height = `${this.karts.length * ROW + 10}px`;
+    this._lbRows = new Map();
+    for (const kart of this.karts) {
+      const row = document.createElement('div');
+      row.className = 'lb-row' + (kart.isPlayer ? ' lb-player' : '') + (kart.id === 'satan' ? ' lb-satan' : '');
+      row.innerHTML = `
+        <span class="lb-rank"></span>
+        <span class="lb-emoji">${kart.char.emoji}</span>
+        <span class="lb-name">${kart.char.name}${kart.isPlayer ? ' ★' : ''}</span>
+        <span class="lb-lap"></span>`;
+      lb.appendChild(row);
+      this._lbRows.set(kart.id, {
+        row,
+        rank: row.querySelector('.lb-rank'),
+        lap: row.querySelector('.lb-lap'),
+      });
+    }
+    this._lbClock = 0;
+    this._updateLeaderboard(this._standings());
+  }
+
+  _updateLeaderboard(standings) {
+    const ROW = 25;
+    standings.forEach((kart, i) => {
+      const r = this._lbRows.get(kart.id);
+      r.row.style.transform = `translateY(${i * ROW}px)`;
+      r.row.classList.toggle('lb-first', i === 0);
+      r.row.classList.toggle('lb-finished', kart.finished);
+      r.rank.textContent = i + 1;
+      r.lap.textContent = kart.finished ? '🏁' : `L${Math.min(Math.max(kart.lap, 1), LAPS)}`;
+    });
   }
 
   _showResults(playerRank) {
@@ -540,11 +582,18 @@ export class Race {
       if (kart.isPlayer) { c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke(); }
     }
   }
-  _updateHUD() {
+  _updateHUD(dt) {
     const p = this.player;
-    const rank = this._rankOf(p);
+    const standings = this._standings();
+    const rank = standings.indexOf(p) + 1;
     $('pos-num').textContent = rank;
     $('pos-suffix').textContent = SUFFIX[rank - 1];
+    // leaderboard reorders a few times a second — the CSS transition smooths it
+    this._lbClock += dt;
+    if (this._lbClock > 0.3) {
+      this._lbClock = 0;
+      this._updateLeaderboard(standings);
+    }
     if (this._lastRank && rank < this._lastRank && this.state === 'racing') SFX.overtake();
     this._lastRank = rank;
     $('hud-timer').textContent = fmtTime(this.raceTime * 1000);
@@ -607,7 +656,7 @@ export class Race {
     this._collideKarts();
     this.particles.update(dt);
     this._updateVisuals(dt, t);
-    this._updateHUD();
+    this._updateHUD(dt);
     this._drawMinimap();
     setEngine(Math.abs(this.player.speed) / BASE_SPEED, this.player.boost > 0);
     this.renderer.render(this.scene, this.camera);
