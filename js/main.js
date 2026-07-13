@@ -142,7 +142,7 @@ function buildTrackGrid() {
       <div class="track-theme">${t.theme}</div>
       ${best ? `<div class="track-best">🏆 ${fmtMs(best)}</div>` : ''}`;
     card.onclick = () => {
-      if (locked) { $('track-blurb').textContent = '🔒 Finish on the podium (top 3) of the previous circuit to unlock!'; return; }
+      if (locked) { $('track-blurb').textContent = '🔒 Win the previous circuit to unlock this one!'; return; }
       selectedTrack = t.id;
       SFX.click();
       grid.querySelectorAll('.track-card').forEach(el => el.classList.remove('selected'));
@@ -181,10 +181,10 @@ function onRaceFinish({ results, playerRank, playerTime, trackDef }) {
   race = null;
   $('hud').classList.add('hidden');
 
-  // progression: podium unlocks the next circuit
+  // progression: only a WIN unlocks the next circuit
   const won = playerRank === 1;
   const podium = playerRank <= 3;
-  if (podium && trackDef.id === save.unlocked && save.unlocked < TRACKS.length) {
+  if (won && trackDef.id === save.unlocked && save.unlocked < TRACKS.length) {
     save.unlocked++;
   }
   if (playerTime && (!save.best[trackDef.id] || playerTime * 1000 < save.best[trackDef.id])) {
@@ -211,9 +211,9 @@ function onRaceFinish({ results, playerRank, playerTime, trackDef }) {
     ? 'The prophecy holds. No matter how well you drove, Satan finishes last. Forever.'
     : trackDef.id === TRACKS.length && won
     ? '👑 CHAMPION OF THE GO TEAM GALAXY — YOU BEAT ALL 20 CIRCUITS! 👑'
-    : won ? `${trackDef.name} conquered in ${fmtMs(Math.round(playerTime * 1000))}!`
-    : podium ? `P${playerRank} on ${trackDef.name} — next circuit unlocked!`
-    : `P${playerRank} on ${trackDef.name} — podium (top 3) unlocks the next circuit!`;
+    : won ? `${trackDef.name} conquered in ${fmtMs(Math.round(playerTime * 1000))} — next circuit unlocked!`
+    : podium ? `P${playerRank} on ${trackDef.name} — so close! Win the race to unlock the next circuit.`
+    : `P${playerRank} on ${trackDef.name} — win the race to unlock the next circuit!`;
   $('results-sub').textContent = finalMsg;
 
   const list = $('results-list');
@@ -231,8 +231,7 @@ function onRaceFinish({ results, playerRank, playerTime, trackDef }) {
   });
   setTimeout(() => SFX.satanLoses(), won ? 1800 : 600);
 
-  $('btn-next-track').style.display =
-    (podium && trackDef.id < TRACKS.length && trackDef.id < save.unlocked + 1) ? '' : 'none';
+  $('btn-next-track').style.display = (won && trackDef.id < TRACKS.length) ? '' : 'none';
 
   show('screen-results');
   startConfetti(won ? 260 : podium ? 120 : 40);

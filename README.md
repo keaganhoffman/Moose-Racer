@@ -52,7 +52,7 @@ Every kart and driver is procedurally built from Three.js primitives with cel sh
 
 ## 🗺 The 20 Circuits
 
-Each course is a unique closed-spline layout with its own elevation profile, palette, sky, fog and themed scenery — from **Moose Meadows** and **Candy Canyon** through **Neon Nights**, **Volcano Vortex**, **Heaven's Highway** and **Space Station Zero**, all the way to the rainbow-road finale, **GO TEAM Galaxy**. Finish on the podium (top 3) to unlock the next circuit; best times are saved locally.
+Each course is a unique closed-spline layout with its own elevation profile, palette, sky, fog and themed scenery — from **Moose Meadows** and **Candy Canyon** through **Neon Nights**, **Volcano Vortex**, **Heaven's Highway** and **Space Station Zero**, all the way to the rainbow-road finale, **GO TEAM Galaxy**. Every race is 5 laps, and only a **win** unlocks the next circuit; best times are saved locally.
 
 | | | |
 |---|---|---|

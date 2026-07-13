@@ -8,7 +8,7 @@ import { CHARACTERS, buildKartFor } from './characters.js';
 import { buildTrack, ROAD_HALF_WIDTH } from './tracks.js';
 import { SFX, startEngine, setEngine, stopEngine, startMusic, stopMusic } from './audio.js';
 
-const LAPS = 3;
+const LAPS = 5;
 const BASE_SPEED = 46;          // world units / s at speed stat 1.0
 const KART_RADIUS = 1.7;
 
