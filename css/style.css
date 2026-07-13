@@ -163,9 +163,9 @@ kbd.wide { padding: .35rem 1.6rem; }
 /* ---------- select screens ---------- */
 #screen-charselect, #screen-trackselect {
   background:
-    radial-gradient(ellipse at 20% -10%, rgba(0,194,255,.35), transparent 55%),
-    radial-gradient(ellipse at 90% 110%, rgba(255,62,165,.35), transparent 55%),
-    linear-gradient(180deg, #160b3a, #2a1058);
+    radial-gradient(ellipse at 20% -10%, rgba(0,194,255,.3), transparent 55%),
+    radial-gradient(ellipse at 90% 110%, rgba(255,62,165,.22), transparent 55%),
+    linear-gradient(180deg, rgba(22,11,58,.94) 0%, rgba(34,14,74,.8) 45%, rgba(34,14,74,.3) 100%);
   padding: 3vh 3vw;
   justify-content: flex-start;
   gap: 1.5vh;

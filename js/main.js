@@ -23,6 +23,10 @@ const renderer = new THREE.WebGLRenderer({ canvas: $('game-canvas'), antialias: 
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
 
 let race = null;
 let selectedChar = save.lastChar || 'moose';
@@ -33,18 +37,26 @@ let selectedTrack = 1;
 // ============================================================
 const menu = (() => {
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x150b38);
   const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
-  camera.position.set(0, 3.2, 9);
-  camera.lookAt(0, 1.2, 0);
-  scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x54308a, 1.1));
-  const sun = new THREE.DirectionalLight(0xfff4d6, 1.6);
+  // frame the podium kart in the lower-right, clear of the selection grid
+  camera.position.set(0, 3.6, 10.5);
+  camera.lookAt(-2.3, 3.0, 0);
+  scene.add(new THREE.HemisphereLight(0xbfe8ff, 0x54308a, 1.2));
+  const sun = new THREE.DirectionalLight(0xfff4d6, 1.8);
   sun.position.set(5, 8, 6);
-  scene.add(sun, new THREE.AmbientLight(0xffffff, 0.35));
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -7; sun.shadow.camera.right = 7;
+  sun.shadow.camera.top = 7; sun.shadow.camera.bottom = -7;
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 30;
+  scene.add(sun, new THREE.AmbientLight(0xffffff, 0.4));
 
   const podium = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.8, 0.6, 32), toon(0xff3ea5));
   podium.position.y = -0.3;
   const podiumTop = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.1, 32), toon(0x00c2ff));
   podiumTop.position.y = 0.05;
+  podiumTop.receiveShadow = true;
   scene.add(podium, podiumTop);
   // floating candy shapes in the background
   const floaters = [];
@@ -77,7 +89,7 @@ const menu = (() => {
     const t = clock.elapsedTime;
     if (kartGroup) kartGroup.rotation.y += dt * 0.8;
     for (const f of floaters) { f.rotation.x += dt * f.userData.spin; f.rotation.y += dt * f.userData.spin * 0.7; }
-    camera.position.y = 3.2 + Math.sin(t * 0.6) * 0.25;
+    camera.position.y = 3.6 + Math.sin(t * 0.6) * 0.25;
     renderer.render(scene, camera);
   }
   return {

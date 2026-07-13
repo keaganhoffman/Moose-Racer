@@ -34,8 +34,18 @@ class Particles {
     this.cursor = 0;
     this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    // soft round sprite so particles read as puffs, not squares
+    const pc = document.createElement('canvas');
+    pc.width = pc.height = 64;
+    const px = pc.getContext('2d');
+    const pg = px.createRadialGradient(32, 32, 2, 32, 32, 30);
+    pg.addColorStop(0, 'rgba(255,255,255,1)');
+    pg.addColorStop(0.6, 'rgba(255,255,255,.55)');
+    pg.addColorStop(1, 'rgba(255,255,255,0)');
+    px.fillStyle = pg; px.fillRect(0, 0, 64, 64);
     const mat = new THREE.PointsMaterial({
-      size: 0.55, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false,
+      size: 0.6, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false,
+      map: new THREE.CanvasTexture(pc), alphaTest: 0.02,
     });
     this.points = new THREE.Points(this.geo, mat);
     this.points.frustumCulled = false;
@@ -504,6 +514,13 @@ export class Race {
       }
       this._animateKartParts(kart, t + kart.aiLane, dt);
     }
+
+    // shadow sun tracks the player so shadows stay crisp everywhere on the circuit
+    const sun = this.track.sun;
+    sun.target.position.copy(this.player.pos);
+    sun.position.copy(this.player.pos).addScaledVector(this.track.sunDir, 220);
+    // boost pads pulse
+    this.track.padMat.emissiveIntensity = 1.3 + 0.7 * Math.sin(t * 6);
 
     // themed prop animation
     for (const o of this.track.animatedProps) {
