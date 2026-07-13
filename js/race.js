@@ -117,7 +117,7 @@ export class Race {
         id, char, built, isPlayer: id === this.playerCharId,
         pos: slot.pos.clone(), heading: slot.heading,
         speed: 0, steer: 0, driftYaw: 0,
-        si: slot.si, lap: 1, progress: 0, prevSi: slot.si,
+        si: slot.si, lap: 0, progress: 0, prevSi: slot.si, // lap 0: the grid sits behind the start line, first crossing begins lap 1
         boost: 0, driftCharge: 0, drifting: false,
         offroad: false, finished: false, finishTime: 0,
         aiLane: (Math.random() - 0.5) * ROAD_HALF_WIDTH * 0.9,
@@ -262,8 +262,8 @@ export class Race {
       kart.lap++;
       if (kart.isPlayer && !kart.finished) {
         if (kart.lap === LAPS) { SFX.finalLap(); this.toast('FINAL LAP! ⚡'); }
-        else if (kart.lap <= LAPS) SFX.lap();
-        $('hud-lap').textContent = `LAP ${Math.min(kart.lap, LAPS)}/${LAPS}`;
+        else if (kart.lap > 1 && kart.lap < LAPS) SFX.lap();
+        $('hud-lap').textContent = `LAP ${Math.min(Math.max(kart.lap, 1), LAPS)}/${LAPS}`;
       }
     } else if (d > SAMPLES * 0.6) {
       kart.lap--; // reversed over the line — no cheating!

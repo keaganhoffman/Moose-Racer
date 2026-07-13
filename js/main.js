@@ -15,7 +15,7 @@ const SAVE_KEY = 'mooseRacerSave.v1';
 function loadSave() {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; }
 }
-function persist() { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* sandboxed/private mode: play on without saving */ } }
 const save = Object.assign({ unlocked: 1, best: {}, tutorialSeen: false }, loadSave());
 
 // ---------- renderer (shared between menu showcase & races) ----------
